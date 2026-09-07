@@ -422,6 +422,9 @@ class FastGroupsToggleRowWidget extends RgthreeBaseWidget<{toggled: boolean}> {
   }
   set toggled(value: boolean) {
     this.value.toggled = value;
+    // Vue nodes (2.0) mode renders custom widgets on a detached canvas that only
+    // repaints when triggerDraw is called; it's attached by the frontend at runtime.
+    this.triggerDraw?.();
   }
 
   toggle(value?: boolean) {
