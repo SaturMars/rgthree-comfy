@@ -307,7 +307,7 @@ FastGroupsMuter.title = NodeTypesString.FAST_GROUPS_MUTER;
 FastGroupsMuter.exposedActions = ["Bypass all", "Enable all", "Toggle all"];
 class FastGroupsToggleRowWidget extends RgthreeBaseWidget {
     constructor(group, node) {
-        super("RGTHREE_TOGGLE_AND_NAV");
+        super(`RGTHREE_TOGGLE_AND_NAV_${group.title}`);
         this.value = { toggled: false };
         this.options = { on: "yes", off: "no" };
         this.type = "custom";

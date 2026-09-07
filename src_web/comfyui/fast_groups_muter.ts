@@ -388,7 +388,9 @@ class FastGroupsToggleRowWidget extends RgthreeBaseWidget<{toggled: boolean}> {
   node: BaseFastGroupsModeChanger;
 
   constructor(group: LGraphGroup, node: BaseFastGroupsModeChanger) {
-    super("RGTHREE_TOGGLE_AND_NAV");
+    // The name must be unique per widget: ComfyUI's Vue Nodes ("Nodes 2.0") mode keys widget
+    // state by `graphId:nodeId:name`, so widgets sharing a name all render/act as the first one.
+    super(`RGTHREE_TOGGLE_AND_NAV_${group.title}`);
     this.group = group;
     this.node = node;
   }
