@@ -37,7 +37,16 @@ class FastGroupsService {
             return;
         }
         for (const node of this.fastGroupNodes) {
-            node.refreshWidgets();
+            // A throw here would otherwise leave `runScheduledForMs` set with nothing
+            // scheduled, permanently killing the sync loop and freezing whatever
+            // half-refreshed toggle states existed (seen with ComfyUI's Nodes 2.0
+            // widget machinery). Keep polling so the widgets re-sync on the next run.
+            try {
+                node.refreshWidgets();
+            }
+            catch (err) {
+                console.warn('[rgthree] Fast Groups refresh failed; will retry.', err);
+            }
         }
         this.clearScheduledRun();
         this.scheduleRun();
