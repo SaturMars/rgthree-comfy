@@ -32,15 +32,28 @@ export class RgthreeBaseNode extends LGraphNode {
             }
             this.checkAndRunOnConstructed();
         });
+        // Newer ComfyUI frontends define `mode` as a prototype accessor backed by a
+        // reactive state object that the renderer and the serializer read directly. An
+        // own property that only stores to a private field diverges from that store: a
+        // muted rgthree node (like Context) still renders and serializes as active, so
+        // its group flips back on after the workflow is reloaded. Route reads/writes
+        // through the base class' accessor when there is one; older frontends keep the
+        // private-field behavior.
+        const baseModeDesc = Object.getOwnPropertyDescriptor(LGraphNode.prototype, "mode");
         defineProperty(this, "mode", {
             get: () => {
-                return this.rgthree_mode;
+                return baseModeDesc === null || baseModeDesc === void 0 ? void 0 : baseModeDesc.get ? baseModeDesc.get.call(this) : this.rgthree_mode;
             },
             set: (mode) => {
-                if (this.rgthree_mode != mode) {
-                    const oldMode = this.rgthree_mode;
-                    this.rgthree_mode = mode;
-                    this.onModeChange(oldMode, mode);
+                const currentMode = baseModeDesc === null || baseModeDesc === void 0 ? void 0 : baseModeDesc.get ? baseModeDesc.get.call(this) : this.rgthree_mode;
+                if (currentMode != mode) {
+                    if (baseModeDesc === null || baseModeDesc === void 0 ? void 0 : baseModeDesc.set) {
+                        baseModeDesc.set.call(this, mode);
+                    }
+                    else {
+                        this.rgthree_mode = mode;
+                    }
+                    this.onModeChange(currentMode, mode);
                 }
             },
         });
