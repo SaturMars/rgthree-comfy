@@ -305,13 +305,22 @@ export class FastGroupsMuter extends BaseFastGroupsModeChanger {
 FastGroupsMuter.type = NodeTypesString.FAST_GROUPS_MUTER;
 FastGroupsMuter.title = NodeTypesString.FAST_GROUPS_MUTER;
 FastGroupsMuter.exposedActions = ["Bypass all", "Enable all", "Toggle all"];
+let toggleRowWidgetUid = 0;
 class FastGroupsToggleRowWidget extends RgthreeBaseWidget {
     constructor(group, node) {
-        super(`RGTHREE_TOGGLE_AND_NAV_${group.title}`);
+        // The name must be unique per widget, and per creation: ComfyUI's Vue Nodes ("Nodes
+        // 2.0") mode keys widget state and its legacy-canvas renderer by
+        // `graphId:nodeId:name`, and only rebinds that renderer when the key changes. Since
+        // workflows load by reconfiguring the same graph in place (node ids are reused), a
+        // recreated widget that reuses a previous name keeps the old, now-detached widget
+        // object bound for both drawing and clicks. A fresh uid forces a clean rebind.
+        super(`RGTHREE_TOGGLE_AND_NAV_${group.title}_${++toggleRowWidgetUid}`);
         this.value = { toggled: false };
         this.options = { on: "yes", off: "no" };
         this.type = "custom";
         this.label = "";
+        this.lastDrawnWidth = 0;
+        this.lastDrawnCanvas = null;
         this.group = group;
         this.node = node;
     }
@@ -353,7 +362,22 @@ class FastGroupsToggleRowWidget extends RgthreeBaseWidget {
         }
     }
     draw(ctx, node, width, posY, height) {
-        var _a;
+        var _a, _b;
+        // In Nodes 2.0 (Vue) mode the detached widget canvas' bitmap is sized from the
+        // zoom-scaled bounding rect (`width`), while the canvas element lays out at its
+        // unscaled width and pointer events report positions in those unscaled pixels.
+        // Stretch the x-axis onto the layout width (and pin the layout height) so the drawn
+        // row and the click positions agree at any zoom. In legacy canvas mode `width`
+        // already matches the node-relative pointer positions, so this is skipped.
+        const cssWidth = ((_a = ctx.canvas) === null || _a === void 0 ? void 0 : _a.clientWidth) || 0;
+        if (typeof this.triggerDraw === "function" && cssWidth > 0 && cssWidth !== width) {
+            if (ctx.canvas)
+                ctx.canvas.style.height = `${height + 2}px`;
+            ctx.scale(width / cssWidth, 1);
+            width = cssWidth;
+        }
+        this.lastDrawnWidth = width;
+        this.lastDrawnCanvas = (_b = ctx.canvas) !== null && _b !== void 0 ? _b : null;
         const widgetData = drawNodeWidget(ctx, { size: [width, height], pos: [15, posY] });
         const showNav = ((_a = node.properties) === null || _a === void 0 ? void 0 : _a[PROPERTY_SHOW_NAV]) !== false;
         let currentX = widgetData.width - widgetData.margin;
@@ -404,7 +428,20 @@ class FastGroupsToggleRowWidget extends RgthreeBaseWidget {
     mouse(event, pos, node) {
         var _a, _b, _c;
         if (event.type == "pointerdown") {
-            if (((_a = node.properties) === null || _a === void 0 ? void 0 : _a[PROPERTY_SHOW_NAV]) !== false && pos[0] >= node.size[0] - 15 - 28 - 1) {
+            // Compare against the width the row was drawn at: in Nodes 2.0 mode this is the
+            // widget canvas' width rather than the node's, and clicks are relative to that
+            // same canvas. If the canvas has been resized since the last draw (like, a node
+            // resize), redraw first so hit-testing matches what's displayed.
+            let width = this.lastDrawnWidth;
+            if (typeof this.triggerDraw === "function") {
+                const cssWidth = ((_a = this.lastDrawnCanvas) === null || _a === void 0 ? void 0 : _a.clientWidth) || 0;
+                if (cssWidth && cssWidth !== width) {
+                    this.triggerDraw();
+                    width = this.lastDrawnWidth;
+                }
+            }
+            width = width || node.size[0];
+            if (((_b = node.properties) === null || _b === void 0 ? void 0 : _b[PROPERTY_SHOW_NAV]) !== false && pos[0] >= width - 15 - 28 - 1) {
                 const canvas = app.canvas;
                 const lowQuality = (((_b = canvas.ds) === null || _b === void 0 ? void 0 : _b.scale) || 1) <= 0.5;
                 if (!lowQuality) {

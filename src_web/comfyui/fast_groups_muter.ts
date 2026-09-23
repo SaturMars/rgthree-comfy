@@ -378,6 +378,10 @@ export class FastGroupsMuter extends BaseFastGroupsModeChanger {
  * The PowerLoraLoaderHeaderWidget that renders a toggle all switch, as well as some title info
  * (more necessary for the double model & clip strengths to label them).
  */
+
+/** Increments for each created toggle row so every widget gets a unique, fresh name. */
+let toggleRowWidgetUid = 0;
+
 class FastGroupsToggleRowWidget extends RgthreeBaseWidget<{toggled: boolean}> {
   override value = {toggled: false};
   override options = {on: "yes", off: "no"};
@@ -387,10 +391,19 @@ class FastGroupsToggleRowWidget extends RgthreeBaseWidget<{toggled: boolean}> {
   group: LGraphGroup;
   node: BaseFastGroupsModeChanger;
 
+  /** The width the row was last drawn at, which click positions are hit-tested against. */
+  private lastDrawnWidth: number = 0;
+  /** The canvas the row was last drawn on, to detect layout changes in Nodes 2.0 mode. */
+  private lastDrawnCanvas: HTMLCanvasElement | null = null;
+
   constructor(group: LGraphGroup, node: BaseFastGroupsModeChanger) {
-    // The name must be unique per widget: ComfyUI's Vue Nodes ("Nodes 2.0") mode keys widget
-    // state by `graphId:nodeId:name`, so widgets sharing a name all render/act as the first one.
-    super(`RGTHREE_TOGGLE_AND_NAV_${group.title}`);
+    // The name must be unique per widget, and per creation: ComfyUI's Vue Nodes ("Nodes
+    // 2.0") mode keys widget state and its legacy-canvas renderer by
+    // `graphId:nodeId:name`, and only rebinds that renderer when the key changes. Since
+    // workflows load by reconfiguring the same graph in place (node ids are reused), a
+    // recreated widget that reuses a previous name keeps the old, now-detached widget
+    // object bound for both drawing and clicks. A fresh uid forces a clean rebind.
+    super(`RGTHREE_TOGGLE_AND_NAV_${group.title}_${++toggleRowWidgetUid}`);
     this.group = group;
     this.node = node;
   }
@@ -442,6 +455,21 @@ class FastGroupsToggleRowWidget extends RgthreeBaseWidget<{toggled: boolean}> {
     posY: number,
     height: number,
   ) {
+    // In Nodes 2.0 (Vue) mode the detached widget canvas' bitmap is sized from the
+    // zoom-scaled bounding rect (`width`), while the canvas element lays out at its
+    // unscaled width and pointer events report positions in those unscaled pixels.
+    // Stretch the x-axis onto the layout width (and pin the layout height) so the drawn
+    // row and the click positions agree at any zoom. In legacy canvas mode `width`
+    // already matches the node-relative pointer positions, so this is skipped.
+    const cssWidth = ctx.canvas?.clientWidth ?? 0;
+    if (typeof this.triggerDraw === "function" && cssWidth > 0 && cssWidth !== width) {
+      ctx.canvas!.style.height = `${height + 2}px`;
+      ctx.scale(width / cssWidth, 1);
+      width = cssWidth;
+    }
+    this.lastDrawnWidth = width;
+    this.lastDrawnCanvas = ctx.canvas ?? null;
+
     const widgetData = drawNodeWidget(ctx, {size: [width, height], pos: [15, posY]});
 
     const showNav = node.properties?.[PROPERTY_SHOW_NAV] !== false;
@@ -510,7 +538,20 @@ class FastGroupsToggleRowWidget extends RgthreeBaseWidget<{toggled: boolean}> {
 
   override mouse(event: CanvasMouseEvent, pos: Vector2, node: LGraphNode): boolean {
     if (event.type == "pointerdown") {
-      if (node.properties?.[PROPERTY_SHOW_NAV] !== false && pos[0] >= node.size[0] - 15 - 28 - 1) {
+      // Compare against the width the row was drawn at: in Nodes 2.0 mode this is the
+      // widget canvas' width rather than the node's, and clicks are relative to that
+      // same canvas. If the canvas has been resized since the last draw (like, a node
+      // resize), redraw first so hit-testing matches what's displayed.
+      let width = this.lastDrawnWidth;
+      if (typeof this.triggerDraw === "function") {
+        const cssWidth = this.lastDrawnCanvas?.clientWidth ?? 0;
+        if (cssWidth && cssWidth !== width) {
+          this.triggerDraw();
+          width = this.lastDrawnWidth;
+        }
+      }
+      width = width || node.size[0];
+      if (node.properties?.[PROPERTY_SHOW_NAV] !== false && pos[0] >= width - 15 - 28 - 1) {
         const canvas = app.canvas as TLGraphCanvas;
         const lowQuality = (canvas.ds?.scale || 1) <= 0.5;
         if (!lowQuality) {
